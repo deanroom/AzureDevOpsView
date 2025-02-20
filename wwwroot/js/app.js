@@ -106,6 +106,29 @@ const app = createApp({
                 this.loading = false;
             }
         },
+        async fetchWorkItemsBatch(ids) {
+            // 每批次最多处理200个工作项
+            const batchSize = 200;
+            const batches = [];
+            
+            for (let i = 0; i < ids.length; i += batchSize) {
+                const batchIds = ids.slice(i, i + batchSize);
+                batches.push(batchIds);
+            }
+
+            const allItems = [];
+            for (const batch of batches) {
+                const batchIds = batch.join(',');
+                const response = await this.fetchApi(
+                    `/_apis/wit/workitems?ids=${batchIds}&fields=System.Id,System.Title,System.AssignedTo,System.State,System.WorkItemType,System.Description,System.CreatedDate,System.CreatedBy,System.ChangedDate,System.ChangedBy,Microsoft.VSTS.Common.Priority,System.AreaPath,System.IterationPath`
+                );
+                if (response && response.value) {
+                    allItems.push(...response.value);
+                }
+            }
+            
+            return allItems;
+        },
         async loadWorkload() {
             if (!this.project || !this.team) {
                 this.error = '请选择项目和团队';
@@ -123,31 +146,50 @@ const app = createApp({
                 
                 console.log('Team members response:', membersResponse);
 
-                // 2. 获取工作项
-                const wiqlQuery = {
-                    query: `SELECT [System.Id], [System.Title], [System.AssignedTo], [System.State], [System.WorkItemType]
-                           FROM WorkItems
-                           WHERE [System.TeamProject] = '${this.project}'
-                           AND [System.State] <> 'Closed'
-                           AND [System.State] <> 'Removed'
-                           ORDER BY [System.ChangedDate] DESC`,
-                    parameters: [
+                // 2. 获取所有工作项ID
+                const allWorkItems = [];
+                let continuationToken = null;
+                
+                do {
+                    const wiqlQuery = {
+                        query: `SELECT [System.Id],
+                                      [System.Title],
+                                      [System.AssignedTo],
+                                      [System.State],
+                                      [System.WorkItemType],
+                                      [System.Description],
+                                      [System.CreatedDate],
+                                      [System.CreatedBy],
+                                      [System.ChangedDate],
+                                      [System.ChangedBy],
+                                      [Microsoft.VSTS.Common.Priority],
+                                      [System.AreaPath],
+                                      [System.IterationPath]
+                               FROM WorkItems
+                               WHERE [System.TeamProject] = '${this.project}'
+                               AND [System.WorkItemType] = '用户情景'
+                               AND [System.State] <> 'Closed'
+                               AND [System.State] <> 'Removed'
+                               ORDER BY [System.ChangedDate] DESC`,
+                        ...(continuationToken && { continuationToken })
+                    };
+
+                    const workItemsResponse = await this.fetchApi(
+                        `/${this.project}/_apis/wit/wiql`,
                         {
-                            name: "@project",
-                            value: this.project
+                            method: 'POST',
+                            body: JSON.stringify(wiqlQuery)
                         }
-                    ]
-                };
+                    );
 
-                const workItemsResponse = await this.fetchApi(
-                    `/${this.project}/_apis/wit/wiql`,
-                    {
-                        method: 'POST',
-                        body: JSON.stringify(wiqlQuery)
+                    if (workItemsResponse.workItems) {
+                        allWorkItems.push(...workItemsResponse.workItems);
                     }
-                );
 
-                console.log('Work items response:', workItemsResponse);
+                    continuationToken = workItemsResponse.continuationToken;
+                } while (continuationToken);
+
+                console.log(`Total work items found: ${allWorkItems.length}`);
 
                 // 3. 处理数据
                 const workloadData = {};
@@ -155,7 +197,6 @@ const app = createApp({
                 // 初始化每个团队成员的数据
                 if (membersResponse && membersResponse.value) {
                     membersResponse.value.forEach(member => {
-                        // 使用 identity.displayName 或 identity.uniqueName 作为键
                         const memberName = member.identity?.displayName || member.identity?.uniqueName || '未知成员';
                         workloadData[memberName] = {
                             total: 0,
@@ -164,29 +205,31 @@ const app = createApp({
                     });
                 }
 
-                // 处理工作项
-                if (workItemsResponse.workItems?.length > 0) {
-                    const workItemIds = workItemsResponse.workItems.map(wi => wi.id).join(',');
-                    const detailedItems = await this.fetchApi(
-                        `/_apis/wit/workitems?ids=${workItemIds}&fields=System.Title,System.AssignedTo,System.State,System.WorkItemType`
-                    );
+                // 分批获取工作项详细信息
+                if (allWorkItems.length > 0) {
+                    const workItemIds = allWorkItems.map(wi => wi.id);
+                    const detailedItems = await this.fetchWorkItemsBatch(workItemIds);
 
-                    console.log('Detailed items:', detailedItems);
-
-                    if (detailedItems && detailedItems.value) {
-                        detailedItems.value.forEach(item => {
-                            const assignedTo = item.fields['System.AssignedTo']?.displayName;
-                            if (assignedTo && workloadData[assignedTo]) {
-                                workloadData[assignedTo].total++;
-                                workloadData[assignedTo].assigned.push({
-                                    id: item.id,
-                                    title: item.fields['System.Title'],
-                                    type: item.fields['System.WorkItemType'],
-                                    state: item.fields['System.State']
-                                });
-                            }
-                        });
-                    }
+                    detailedItems.forEach(item => {
+                        const assignedTo = item.fields['System.AssignedTo']?.displayName;
+                        if (assignedTo && workloadData[assignedTo]) {
+                            workloadData[assignedTo].total++;
+                            workloadData[assignedTo].assigned.push({
+                                id: item.id,
+                                title: item.fields['System.Title'],
+                                type: item.fields['System.WorkItemType'],
+                                state: item.fields['System.State'],
+                                description: item.fields['System.Description'],
+                                createdDate: new Date(item.fields['System.CreatedDate']).toLocaleDateString(),
+                                createdBy: item.fields['System.CreatedBy']?.displayName,
+                                changedDate: new Date(item.fields['System.ChangedDate']).toLocaleDateString(),
+                                changedBy: item.fields['System.ChangedBy']?.displayName,
+                                priority: item.fields['Microsoft.VSTS.Common.Priority'],
+                                areaPath: item.fields['System.AreaPath'],
+                                iterationPath: item.fields['System.IterationPath']
+                            });
+                        }
+                    });
                 }
 
                 console.log('Processed workload data:', workloadData);
