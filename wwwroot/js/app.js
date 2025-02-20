@@ -139,16 +139,25 @@ const app = createApp({
                 const data = await this.fetchApi('/_apis/projects');
                 
                 if (!data || !data.value) {
-                    throw new Error('返回的数据格式不正确');
+                    throw new Error('返回的项目数据格式不正确');
                 }
 
-                this.projects = data.value.map(proj => ({
-                    id: proj.id,
-                    name: proj.name,
-                    description: proj.description
-                }));
+                // 添加"全部项目"选项
+                this.projects = [
+                    { id: 'all', name: '全部项目', description: '显示所有项目' },
+                    ...data.value.map(proj => ({
+                        id: proj.id,
+                        name: proj.name,
+                        description: proj.description
+                    }))
+                ];
 
                 console.log('Loaded projects:', this.projects);
+                
+                // 默认选择"全部项目"
+                this.project = 'all';
+                // 加载团队
+                await this.loadTeams();
             } catch (err) {
                 console.error('Load projects error:', err);
                 this.error = `加载项目失败: ${err.message}`;
@@ -158,24 +167,66 @@ const app = createApp({
             }
         },
         async loadTeams() {
-            if (!this.project) return;
-            
             try {
                 this.loading = true;
                 this.error = null;
 
-                const data = await this.fetchApi(`/_apis/projects/${this.project}/teams`);
-                
-                if (!data || !data.value) {
-                    throw new Error('返回的团队数据格式不正确');
+                if (this.project === 'all') {
+                    // 如果选择了"全部项目"，则获取所有项目的所有团队
+                    const allTeams = [];
+                    for (const proj of this.projects) {
+                        if (proj.id === 'all') continue;
+                        
+                        const data = await this.fetchApi(`/_apis/projects/${proj.name}/teams`);
+                        if (data && data.value) {
+                            allTeams.push(...data.value.map(team => ({
+                                ...team,
+                                projectName: proj.name // 添加项目名称以便后续使用
+                            })));
+                        }
+                    }
+                    
+                    // 添加"全部团队"选项
+                    this.teams = [
+                        { id: 'all', name: '全部团队', description: '显示所有团队' },
+                        ...allTeams.map(team => ({
+                            id: team.id,
+                            name: team.name,
+                            description: team.description,
+                            projectName: team.projectName
+                        }))
+                    ];
+                } else {
+                    // 获取特定项目的团队
+                    const selectedProject = this.projects.find(p => p.id === this.project);
+                    if (!selectedProject) {
+                        throw new Error('未找到选中的项目');
+                    }
+
+                    const data = await this.fetchApi(`/_apis/projects/${selectedProject.name}/teams`);
+                    
+                    if (!data || !data.value) {
+                        throw new Error('返回的团队数据格式不正确');
+                    }
+
+                    // 添加"全部团队"选项
+                    this.teams = [
+                        { id: 'all', name: '全部团队', description: '显示所有团队' },
+                        ...data.value.map(team => ({
+                            id: team.id,
+                            name: team.name,
+                            description: team.description,
+                            projectName: selectedProject.name
+                        }))
+                    ];
                 }
 
-                this.teams = data.value.map(team => ({
-                    id: team.id,
-                    name: team.name,
-                    description: team.description
-                }));
-
+                // 默认选择"全部团队"
+                this.team = 'all';
+                
+                // 自动加载数据
+                await this.loadWorkload();
+                
                 console.log('Loaded teams:', this.teams);
             } catch (err) {
                 console.error('Load teams error:', err);
@@ -208,8 +259,8 @@ const app = createApp({
             return allItems;
         },
         async loadWorkload() {
-            if (!this.project || !this.team) {
-                this.error = '请选择项目和团队';
+            if (!this.project) {
+                this.error = '请选择项目';
                 return;
             }
 
@@ -218,33 +269,103 @@ const app = createApp({
                 this.error = null;
 
                 // 1. 获取团队成员
-                const membersResponse = await this.fetchApi(
-                    `/_apis/projects/${this.project}/teams/${this.team}/members`
-                );
+                let allMembers = new Set();
                 
-                console.log('Team members response:', membersResponse);
+                if (this.project === 'all') {
+                    // 如果选择了全部项目，获取所有项目的所有团队成员
+                    for (const proj of this.projects) {
+                        if (proj.id === 'all') continue;
+                        
+                        const teams = await this.fetchApi(`/_apis/projects/${proj.name}/teams`);
+                        if (teams && teams.value) {
+                            for (const team of teams.value) {
+                                const membersResponse = await this.fetchApi(
+                                    `/_apis/projects/${proj.name}/teams/${team.name}/members`
+                                );
+                                if (membersResponse && membersResponse.value) {
+                                    membersResponse.value.forEach(member => {
+                                        const memberName = member.identity?.displayName || member.identity?.uniqueName || '未知成员';
+                                        allMembers.add(memberName);
+                                    });
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // 获取特定项目的团队成员
+                    const selectedProject = this.projects.find(p => p.id === this.project);
+                    if (!selectedProject) {
+                        throw new Error('未找到选中的项目');
+                    }
 
-                // 2. 获取所有工作项ID
+                    if (this.team === 'all') {
+                        // 如果选择了全部团队，获取项目的所有团队成员
+                        const teams = await this.fetchApi(`/_apis/projects/${selectedProject.name}/teams`);
+                        if (teams && teams.value) {
+                            for (const team of teams.value) {
+                                const membersResponse = await this.fetchApi(
+                                    `/_apis/projects/${selectedProject.name}/teams/${team.name}/members`
+                                );
+                                if (membersResponse && membersResponse.value) {
+                                    membersResponse.value.forEach(member => {
+                                        const memberName = member.identity?.displayName || member.identity?.uniqueName || '未知成员';
+                                        allMembers.add(memberName);
+                                    });
+                                }
+                            }
+                        }
+                    } else {
+                        // 获取特定团队的成员
+                        const selectedTeam = this.teams.find(t => t.id === this.team);
+                        if (!selectedTeam) {
+                            throw new Error('未找到选中的团队');
+                        }
+
+                        const membersResponse = await this.fetchApi(
+                            `/_apis/projects/${selectedProject.name}/teams/${selectedTeam.name}/members`
+                        );
+                        if (membersResponse && membersResponse.value) {
+                            membersResponse.value.forEach(member => {
+                                const memberName = member.identity?.displayName || member.identity?.uniqueName || '未知成员';
+                                allMembers.add(memberName);
+                            });
+                        }
+                    }
+                }
+
+                // 2. 构建WIQL查询
+                let projectCondition = '';
+                if (this.project !== 'all') {
+                    const selectedProject = this.projects.find(p => p.id === this.project);
+                    if (!selectedProject) {
+                        throw new Error('未找到选中的项目');
+                    }
+                    projectCondition = `AND [System.TeamProject] = '${selectedProject.name}'`;
+                }
+
+                const wiqlQuery = {
+                    query: `SELECT [System.Id]
+                           FROM WorkItems
+                           WHERE [System.WorkItemType] = '用户情景'
+                           ${projectCondition}
+                           AND [System.State] <> '已关闭'
+                           AND [System.State] <> '已删除'
+                           ORDER BY [System.State] ASC, [Microsoft.VSTS.Common.Priority] ASC`
+                };
+
+                // 3. 获取所有工作项ID
                 const allWorkItems = [];
                 let continuationToken = null;
                 
                 do {
-                    const wiqlQuery = {
-                        query: `SELECT [System.Id]
-                               FROM WorkItems
-                               WHERE [System.TeamProject] = '${this.project}'
-                               AND [System.WorkItemType] = '用户情景'
-                               AND [System.State] <> '已关闭'
-                               AND [System.State] <> '已删除'
-                               ORDER BY [System.State] ASC, [Microsoft.VSTS.Common.Priority] ASC`,
-                        ...(continuationToken && { continuationToken })
-                    };
-
                     const workItemsResponse = await this.fetchApi(
-                        `/${this.project}/_apis/wit/wiql`,
+                        `/_apis/wit/wiql?api-version=6.0`,
                         {
                             method: 'POST',
-                            body: JSON.stringify(wiqlQuery)
+                            body: JSON.stringify({
+                                ...wiqlQuery,
+                                ...(continuationToken && { continuationToken })
+                            })
                         }
                     );
 
@@ -257,27 +378,25 @@ const app = createApp({
 
                 console.log(`Total work items found: ${allWorkItems.length}`);
                 
-                // 3. 处理数据
+                // 4. 初始化数据结构
                 const workloadData = {};
+                allMembers.forEach(memberName => {
+                    workloadData[memberName] = {
+                        total: 0,
+                        assigned: []
+                    };
+                });
 
-                // 初始化每个团队成员的数据
-                if (membersResponse && membersResponse.value) {
-                    membersResponse.value.forEach(member => {
-                        const memberName = member.identity?.displayName || member.identity?.uniqueName || '未知成员';
-                        workloadData[memberName] = {
-                            total: 0,
-                            assigned: []
-                        };
-                    });
-                }
-
-                // 分批获取工作项详细信息
+                // 5. 分批获取工作项详细信息
                 if (allWorkItems.length > 0) {
                     const workItemIds = allWorkItems.map(wi => wi.id);
                     const detailedItems = await this.fetchWorkItemsBatch(workItemIds);
 
                     detailedItems.forEach(item => {
                         const processedItem = processWorkItem(item);
+                        // 添加项目和团队信息
+                        processedItem.projectName = item.fields['System.TeamProject'];
+                        processedItem.teamName = item.fields['System.AreaPath'].split('\\')[1] || '默认团队';
                         const assignedTo = processedItem.assignedTo;
                         
                         if (!workloadData[assignedTo]) {
