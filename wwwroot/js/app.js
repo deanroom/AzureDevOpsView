@@ -1,3 +1,30 @@
+// 格式化日期
+function formatDate(dateString) {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    });
+}
+
+// 处理工作项数据
+function processWorkItem(item) {
+    return {
+        id: item.id,
+        title: item.fields['System.Title'] || '无标题',
+        description: item.fields['System.Description'] || '',
+        state: item.fields['System.State'] || '未知',
+        priority: item.fields['Microsoft.VSTS.Common.Priority'] || '-',
+        startDate: formatDate(item.fields['Microsoft.VSTS.Scheduling.StartDate']),
+        targetDate: formatDate(item.fields['Microsoft.VSTS.Scheduling.TargetDate']),
+        changedDate: formatDate(item.fields['System.ChangedDate']),
+        changedBy: item.fields['System.ChangedBy']?.displayName || '-',
+        assignedTo: item.fields['System.AssignedTo']?.displayName || '未分配'
+    };
+}
+
 const { createApp } = Vue
 
 const app = createApp({
@@ -14,6 +41,14 @@ const app = createApp({
             loading: false,
             error: null,
             chart: null
+        }
+    },
+    computed: {
+        sortedMembers() {
+            if (!this.workloadData) return [];
+            return Object.entries(this.workloadData)
+                .sort(([, a], [, b]) => b.total - a.total)
+                .map(([member]) => member);
         }
     },
     methods: {
@@ -107,7 +142,6 @@ const app = createApp({
             }
         },
         async fetchWorkItemsBatch(ids) {
-            // 每批次最多处理200个工作项
             const batchSize = 200;
             const batches = [];
             
@@ -120,7 +154,7 @@ const app = createApp({
             for (const batch of batches) {
                 const batchIds = batch.join(',');
                 const response = await this.fetchApi(
-                    `/_apis/wit/workitems?ids=${batchIds}&fields=System.Id,System.Title,System.AssignedTo,System.State,System.WorkItemType,System.Description,System.CreatedDate,System.CreatedBy,System.ChangedDate,System.ChangedBy,Microsoft.VSTS.Common.Priority,System.AreaPath,System.IterationPath`
+                    `/_apis/wit/workitems?ids=${batchIds}&fields=System.Id,System.Title,System.AssignedTo,System.State,System.WorkItemType,System.Description,System.CreatedDate,System.CreatedBy,System.ChangedDate,System.ChangedBy,Microsoft.VSTS.Common.Priority,System.AreaPath,System.IterationPath,Microsoft.VSTS.Scheduling.StartDate,Microsoft.VSTS.Scheduling.TargetDate,Microsoft.VSTS.Common.StateChangeDate`
                 );
                 if (response && response.value) {
                     allItems.push(...response.value);
@@ -135,10 +169,10 @@ const app = createApp({
                 return;
             }
 
-            this.loading = true;
-            this.error = null;
-
             try {
+                this.loading = true;
+                this.error = null;
+
                 // 1. 获取团队成员
                 const membersResponse = await this.fetchApi(
                     `/_apis/projects/${this.project}/teams/${this.team}/members`
@@ -152,26 +186,13 @@ const app = createApp({
                 
                 do {
                     const wiqlQuery = {
-                        query: `SELECT [System.Id],
-                                      [System.Title],
-                                      [System.AssignedTo],
-                                      [System.State],
-                                      [System.WorkItemType],
-                                      [System.Description],
-                                      [System.CreatedDate],
-                                      [System.CreatedBy],
-                                      [System.ChangedDate],
-                                      [System.ChangedBy],
-                                      [Microsoft.VSTS.Common.Priority],
-                                      [System.AreaPath],
-                                      [System.IterationPath]
+                        query: `SELECT [System.Id]
                                FROM WorkItems
                                WHERE [System.TeamProject] = '${this.project}'
                                AND [System.WorkItemType] = '用户情景'
                                AND [System.State] <> '已关闭'
-                               AND [System.State] <> '已解决'
                                AND [System.State] <> '已删除'
-                               ORDER BY [System.ChangedDate] DESC`,
+                               ORDER BY [System.State] ASC, [Microsoft.VSTS.Common.Priority] ASC`,
                         ...(continuationToken && { continuationToken })
                     };
 
@@ -191,7 +212,7 @@ const app = createApp({
                 } while (continuationToken);
 
                 console.log(`Total work items found: ${allWorkItems.length}`);
-
+                
                 // 3. 处理数据
                 const workloadData = {};
 
@@ -212,24 +233,18 @@ const app = createApp({
                     const detailedItems = await this.fetchWorkItemsBatch(workItemIds);
 
                     detailedItems.forEach(item => {
-                        const assignedTo = item.fields['System.AssignedTo']?.displayName;
-                        if (assignedTo && workloadData[assignedTo]) {
-                            workloadData[assignedTo].total++;
-                            workloadData[assignedTo].assigned.push({
-                                id: item.id,
-                                title: item.fields['System.Title'],
-                                type: item.fields['System.WorkItemType'],
-                                state: item.fields['System.State'],
-                                description: item.fields['System.Description'],
-                                createdDate: new Date(item.fields['System.CreatedDate']).toLocaleDateString(),
-                                createdBy: item.fields['System.CreatedBy']?.displayName,
-                                changedDate: new Date(item.fields['System.ChangedDate']).toLocaleDateString(),
-                                changedBy: item.fields['System.ChangedBy']?.displayName,
-                                priority: item.fields['Microsoft.VSTS.Common.Priority'],
-                                areaPath: item.fields['System.AreaPath'],
-                                iterationPath: item.fields['System.IterationPath']
-                            });
+                        const processedItem = processWorkItem(item);
+                        const assignedTo = processedItem.assignedTo;
+                        
+                        if (!workloadData[assignedTo]) {
+                            workloadData[assignedTo] = {
+                                total: 0,
+                                assigned: []
+                            };
                         }
+                        
+                        workloadData[assignedTo].assigned.push(processedItem);
+                        workloadData[assignedTo].total++;
                     });
                 }
 
@@ -254,29 +269,61 @@ const app = createApp({
                 this.chart.destroy();
             }
 
-            const labels = Object.keys(this.workloadData);
-            const data = labels.map(member => this.workloadData[member].total);
+            // 准备数据并按工作项总数倒序排序
+            const members = this.sortedMembers;
+
+            const datasets = [];
+
+            // 统计每个状态的任务数
+            const stateColors = {
+                '新建': 'rgba(59, 130, 246, 0.5)', // 蓝色
+                '进行中': 'rgba(16, 185, 129, 0.5)', // 绿色
+                '待评审': 'rgba(245, 158, 11, 0.5)', // 黄色
+                '已解决': 'rgba(107, 114, 128, 0.5)' // 灰色
+            };
+
+            // 为每个状态创建一个数据集
+            Object.keys(stateColors).forEach(state => {
+                const data = members.map(member => {
+                    return this.workloadData[member].assigned.filter(item => item.state === state).length;
+                });
+
+                datasets.push({
+                    label: state,
+                    data: data,
+                    backgroundColor: stateColors[state],
+                    borderColor: stateColors[state].replace('0.5', '1'),
+                    borderWidth: 1
+                });
+            });
 
             this.chart = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: labels,
-                    datasets: [{
-                        label: '分配的工作项数量',
-                        data: data,
-                        backgroundColor: 'rgba(59, 130, 246, 0.5)',
-                        borderColor: 'rgb(59, 130, 246)',
-                        borderWidth: 1
-                    }]
+                    labels: members,
+                    datasets: datasets
                 },
                 options: {
                     responsive: true,
                     scales: {
+                        x: {
+                            stacked: true,
+                        },
                         y: {
+                            stacked: true,
                             beginAtZero: true,
                             ticks: {
                                 stepSize: 1
                             }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        },
+                        legend: {
+                            position: 'top'
                         }
                     }
                 }
