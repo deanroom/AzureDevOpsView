@@ -168,8 +168,9 @@ const app = createApp({
                                FROM WorkItems
                                WHERE [System.TeamProject] = '${this.project}'
                                AND [System.WorkItemType] = '用户情景'
-                               AND [System.State] <> 'Closed'
-                               AND [System.State] <> 'Removed'
+                               AND [System.State] <> '已关闭'
+                               AND [System.State] <> '已解决'
+                               AND [System.State] <> '已删除'
                                ORDER BY [System.ChangedDate] DESC`,
                         ...(continuationToken && { continuationToken })
                     };
