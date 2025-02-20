@@ -61,8 +61,18 @@
         <div class="bg-white rounded-lg shadow-md p-6 mb-8">
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2" for="project">
+                        项目名称
+                    </label>
+                    <select id="project" v-model="project" @change="loadTeams" class="w-full rounded-md shadow-sm">
+                        <option v-for="proj in projects" :key="proj.id" :value="proj.id">
+                            {{ proj.name }}
+                        </option>
+                    </select>
+                </div>
+                <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2" for="team">
-                       项目
+                        团队名称
                     </label>
                     <select id="team" v-model="team" class="w-full rounded-md shadow-sm">
                         <option v-for="t in teams" :key="t.id" :value="t.id">
@@ -70,7 +80,13 @@
                         </option>
                     </select>
                 </div>
-                <div class="flex items-end">
+                <div class="flex flex-col justify-end space-y-4">
+                    <div class="flex items-center">
+                        <input type="checkbox" id="hasTargetDate" v-model="hasTargetDate" class="h-4 w-4 text-blue-600 rounded border-gray-300">
+                        <label for="hasTargetDate" class="ml-2 block text-sm text-gray-700">
+                            仅显示已定义目标日期的工作项
+                        </label>
+                    </div>
                     <button @click="loadWorkload"
                         class="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-md transition duration-150 ease-in-out">
                         加载数据

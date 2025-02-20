@@ -84,7 +84,8 @@ const app = createApp({
             workloadData: null,
             loading: false,
             error: null,
-            chart: null
+            chart: null,
+            hasTargetDate: true
         }
     },
     computed: {
@@ -344,11 +345,17 @@ const app = createApp({
                     projectCondition = `AND [System.TeamProject] = '${selectedProject.name}'`;
                 }
 
+                // 添加目标日期条件
+                const targetDateCondition = this.hasTargetDate 
+                    ? "AND [Microsoft.VSTS.Scheduling.TargetDate] <> ''" 
+                    : "";
+
                 const wiqlQuery = {
                     query: `SELECT [System.Id]
                            FROM WorkItems
                            WHERE [System.WorkItemType] = '用户情景'
                            ${projectCondition}
+                           ${targetDateCondition}
                            AND [System.State] <> '已关闭'
                            AND [System.State] <> '已删除'
                            ORDER BY [System.State] ASC, [Microsoft.VSTS.Common.Priority] ASC`
