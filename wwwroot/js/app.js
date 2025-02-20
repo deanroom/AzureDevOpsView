@@ -91,6 +91,7 @@ const app = createApp({
         sortedMembers() {
             if (!this.workloadData) return [];
             return Object.entries(this.workloadData)
+                .filter(([, data]) => data.total > 0)
                 .sort(([, a], [, b]) => a.total - b.total)
                 .map(([member]) => member);
         }
@@ -396,7 +397,7 @@ const app = createApp({
                         const processedItem = processWorkItem(item);
                         // 添加项目和团队信息
                         processedItem.projectName = item.fields['System.TeamProject'];
-                        processedItem.teamName = item.fields['System.AreaPath'].split('\\')[1] || '默认团队';
+                        processedItem.teamName = item.fields['System.AreaPath'] || '默认团队';
                         const assignedTo = processedItem.assignedTo;
                         
                         if (!workloadData[assignedTo]) {
