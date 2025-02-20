@@ -10,7 +10,12 @@ function formatDate(dateString) {
 }
 
 // 计算延期状态
-function calculateDelayStatus(targetDateStr) {
+function calculateDelayStatus(targetDateStr, state) {
+    // 如果状态是已解决，直接返回正常
+    if (state === '已解决') {
+        return { status: 'normal', text: '正常' };
+    }
+    
     if (!targetDateStr || targetDateStr === '-') return { status: 'normal', text: '正常' };
     
     const today = new Date();
@@ -19,7 +24,9 @@ function calculateDelayStatus(targetDateStr) {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
     
-    const targetDate = new Date(targetDateStr.split('/').reverse().join('/'));
+    // 解析日期 "2025/02/19" 格式
+    const [year, month, day] = targetDateStr.split('/').map(num => parseInt(num, 10));
+    const targetDate = new Date(year, month - 1, day); // 月份需要减1因为Date对象中月份是0-11
     targetDate.setHours(0, 0, 0, 0);
     
     if (targetDate < today) {
@@ -31,16 +38,27 @@ function calculateDelayStatus(targetDateStr) {
     }
 }
 
+// 获取延期状态优先级
+function getDelayStatusPriority(status) {
+    switch (status) {
+        case 'delayed': return 1;  // 已延期优先级最高
+        case 'warning': return 2;  // 即将到期其次
+        case 'normal': return 3;   // 正常优先级最低
+        default: return 4;
+    }
+}
+
 // 处理工作项数据
 function processWorkItem(item) {
     const targetDate = formatDate(item.fields['Microsoft.VSTS.Scheduling.TargetDate']);
-    const delayStatus = calculateDelayStatus(targetDate);
+    const state = item.fields['System.State'] || '未知';
+    const delayStatus = calculateDelayStatus(targetDate, state);
     
     return {
         id: item.id,
         title: item.fields['System.Title'] || '无标题',
         description: item.fields['System.Description'] || '',
-        state: item.fields['System.State'] || '未知',
+        state: state,
         priority: item.fields['Microsoft.VSTS.Common.Priority'] || '-',
         startDate: formatDate(item.fields['Microsoft.VSTS.Scheduling.StartDate']),
         targetDate: targetDate,
@@ -271,6 +289,15 @@ const app = createApp({
                         
                         workloadData[assignedTo].assigned.push(processedItem);
                         workloadData[assignedTo].total++;
+                    });
+
+                    // 对每个成员的工作项按延期状态排序
+                    Object.values(workloadData).forEach(memberData => {
+                        memberData.assigned.sort((a, b) => {
+                            const priorityA = getDelayStatusPriority(a.delayStatus.status);
+                            const priorityB = getDelayStatusPriority(b.delayStatus.status);
+                            return priorityA - priorityB;
+                        });
                     });
                 }
 
