@@ -1,46 +1,26 @@
-# Azure DevOps Workload View
+# Azure DevOps 团队工作负载查看器
 
-A web application for visualizing team workload distribution in Azure DevOps.
+一个基于 Web 的工具，用于可视化和管理 Azure DevOps 团队的工作负载分布。
 
 ## 安全说明
 
 ⚠️ **重要提示**：
+
 - 永远不要将 `config.js` 提交到版本控制系统
 - 不要在代码中硬编码 PAT 或其他敏感信息
 - 定期更换 PAT 令牌
 - 使用最小权限原则配置 PAT
 
-## 离线部署准备
-
-1. 下载所需的第三方库文件到 `wwwroot/lib/` 目录：
-
-   ```bash
-   # 创建 lib 目录
-   mkdir -p wwwroot/lib
-   
-   # 下载 Vue.js
-   curl -o wwwroot/lib/vue.global.prod.js https://cdn.jsdelivr.net/npm/vue@3.2.31/dist/vue.global.prod.js
-   
-   # 下载 Chart.js
-   curl -o wwwroot/lib/chart.umd.min.js https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js
-   
-   # 下载 Tailwind CSS
-   curl -o wwwroot/lib/tailwind.min.css https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css
-   ```
-
-   或者手动下载以下文件并放入 `wwwroot/lib/` 目录：
-   - Vue.js: https://cdn.jsdelivr.net/npm/vue@3.2.31/dist/vue.global.prod.js
-   - Chart.js: https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js
-   - Tailwind CSS: https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css
-
 ## 配置说明
 
 1. 复制配置文件模板：
+
    ```bash
    cp config.example.js wwwroot/js/config.js
    ```
 
 2. 编辑 `wwwroot/js/config.js` 配置文件：
+
    - `serverUrl`: Azure DevOps Server 地址
    - `collection`: Collection 名称（例如：'DefaultCollection'）
    - `pat`: Personal Access Token
@@ -83,16 +63,56 @@ server {
 }
 ```
 
-## 功能特性
+## 功能特点
 
-- 项目和团队选择
-- 实时工作负载可视化
-- 可配置的 Azure DevOps 连接设置
-- 安全的凭据管理
+- 项目和团队筛选
+
+  - 支持查看单个项目或所有项目
+  - 支持查看单个团队或所有团队
+  - 默认选择"全部项目"和"全部团队"
+
+- 工作项过滤
+
+  - 可选择仅显示已定义目标日期的工作项（默认开启）
+  - 自动过滤已关闭和已删除的工作项
+
+- 数据可视化
+
+  - 使用堆叠柱状图展示团队成员的工作项分布
+  - 按工作项状态（新建、进行中、待评审、已解决）进行颜色区分
+  - 支持图表交互和数据提示
+
+- 详细数据展示
+  - 按成员分组显示工作项详情
+  - 显示工作项的完整信息（ID、标题、状态、优先级等）
+  - 工作项延期状态自动计算和显示
+  - 成员工作项按延期状态优先级排序
 
 ## 技术栈
 
-- Vue.js 3.2.31
+- Vue.js 3
+- Tailwind CSS
 - Chart.js
-- Tailwind CSS 2.2.19
-- Azure DevOps REST API v6.0 
+- Azure DevOps REST API
+
+## 使用说明
+
+1. 页面加载时自动获取所有可用项目
+2. 选择项目后自动加载对应团队
+3. 可通过复选框控制是否只显示有目标日期的工作项
+4. 点击"加载数据"按钮获取工作负载数据
+5. 数据以图表和表格两种形式展示
+6. 表格中的工作项按延期状态排序展示
+
+## 工作项状态说明
+
+- 正常：未超过目标日期
+- 即将到期：目标日期在 24 小时内
+- 已延期：已超过目标日期
+- 对于已解决的工作项，始终显示为正常状态
+
+## 注意事项
+
+1. 需要确保 PAT (Personal Access Token) 具有足够的权限
+2. 大量数据加载可能需要较长时间
+3. 建议使用现代浏览器以获得最佳体验

@@ -31,32 +31,6 @@
             <h1 class="text-3xl font-bold text-gray-800">Azure DevOps 团队工作负载查看器</h1>
         </header>
 
-        <!-- 配置面板 -->
-        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
-            <div class="space-y-4">
-                <div class="bg-gray-50 rounded-lg p-4">
-                    <h3 class="text-lg font-semibold text-gray-700 mb-4">Azure DevOps 配置</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">服务器 URL</label>
-                            <input type="text" v-model="serverUrl" class="w-full rounded-md shadow-sm"
-                                placeholder="http://your-azure-devops-server">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Collection</label>
-                            <input type="text" v-model="collection" class="w-full rounded-md shadow-sm"
-                                placeholder="DefaultCollection">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">PAT Token</label>
-                            <input type="password" v-model="pat" class="w-full rounded-md shadow-sm"
-                                placeholder="Your Personal Access Token">
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <!-- 工作负载查询面板 -->
         <div class="bg-white rounded-lg shadow-md p-6 mb-8">
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -82,7 +56,8 @@
                 </div>
                 <div class="flex flex-col justify-end space-y-4">
                     <div class="flex items-center">
-                        <input type="checkbox" id="hasTargetDate" v-model="hasTargetDate" class="h-4 w-4 text-blue-600 rounded border-gray-300">
+                        <input type="checkbox" id="hasTargetDate" v-model="hasTargetDate"
+                            class="h-4 w-4 text-blue-600 rounded border-gray-300">
                         <label for="hasTargetDate" class="ml-2 block text-sm text-gray-700">
                             仅显示已定义目标日期的工作项
                         </label>
@@ -133,21 +108,29 @@
                         <table class="min-w-full divide-y divide-gray-200">
                             <thead class="bg-gray-50">
                                 <tr>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th
+                                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         ID</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th
+                                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         标题</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th
+                                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         状态</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th
+                                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         优先级</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th
+                                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         开始日期</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th
+                                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         目标日期</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th
+                                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         延期状态</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th
+                                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         项目</th>
                                 </tr>
                             </thead>
@@ -158,17 +141,19 @@
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full"
                                             :class="{
-                                                'bg-green-100 text-green-800': item.state === '进行中',
-                                                'bg-yellow-100 text-yellow-800': item.state === '待评审',
+                                                'bg-green-100 text-green-800': item.state === '活动',
                                                 'bg-blue-100 text-blue-800': item.state === '新建',
                                                 'bg-gray-100 text-gray-800': item.state === '已解决'
                                             }">
                                             {{ item.state }}
                                         </span>
                                     </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ item.priority }}</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ item.startDate }}</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ item.targetDate }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ item.priority }}
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ item.startDate }}
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ item.targetDate }}
+                                    </td>
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full"
                                             :class="{
@@ -179,7 +164,8 @@
                                             {{ item.delayStatus.text }}
                                         </span>
                                     </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ item.teamName }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ item.teamName }}
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>
