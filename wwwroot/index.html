@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Azure DevOps 团队工作负载查看器</title>
+    <link href="/lib/tailwind.min.css" rel="stylesheet">
+    <script src="/lib/vue.global.js"></script>
+    <script src="/lib/chart.js"></script>
+    <style>
+        input,
+        select {
+            border: 1px solid #e2e8f0;
+            padding: 0.5rem;
+            border-radius: 0.375rem;
+        }
+
+        input:focus,
+        select:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+    </style>
+</head>
+
+<body class="bg-gray-50">
+    <div id="app" class="container mx-auto px-4 py-8 max-w-6xl">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">Azure DevOps 团队工作负载查看器</h1>
+        </header>
+
+        <!-- 配置面板 -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <div class="space-y-4">
+                <div class="bg-gray-50 rounded-lg p-4">
+                    <h3 class="text-lg font-semibold text-gray-700 mb-4">Azure DevOps 配置</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">服务器 URL</label>
+                            <input type="text" v-model="serverUrl" class="w-full rounded-md shadow-sm"
+                                placeholder="http://your-azure-devops-server">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Collection</label>
+                            <input type="text" v-model="collection" class="w-full rounded-md shadow-sm"
+                                placeholder="DefaultCollection">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">PAT Token</label>
+                            <input type="password" v-model="pat" class="w-full rounded-md shadow-sm"
+                                placeholder="Your Personal Access Token">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 工作负载查询面板 -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2" for="project">
+                        项目名称
+                    </label>
+                    <select id="project" v-model="project" @change="loadTeams" class="w-full rounded-md shadow-sm">
+                        <option value="">选择项目</option>
+                        <option v-for="proj in projects" :key="proj.id" :value="proj.name">
+                            {{ proj.name }}
+                        </option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2" for="team">
+                        团队名称
+                    </label>
+                    <select id="team" v-model="team" class="w-full rounded-md shadow-sm">
+                        <option value="">选择团队</option>
+                        <option v-for="t in teams" :key="t.id" :value="t.name">
+                            {{ t.name }}
+                        </option>
+                    </select>
+                </div>
+                <div class="flex items-end">
+                    <button @click="loadWorkload"
+                        class="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-md transition duration-150 ease-in-out">
+                        加载数据
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 加载状态 -->
+        <div v-if="loading" class="text-center py-12">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+            <p class="mt-4 text-gray-600">加载中...</p>
+        </div>
+
+        <!-- 错误提示 -->
+        <div v-if="error" class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-8" role="alert">
+            <strong class="font-medium">错误！</strong>
+            <span class="block sm:inline ml-1">{{ error }}</span>
+        </div>
+
+        <!-- 工作负载数据展示 -->
+        <div v-if="workloadData" class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <!-- 图表展示 -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">工作项分配</h2>
+                <canvas id="workloadChart"></canvas>
+            </div>
+
+            <!-- 详细数据 -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">团队成员详情</h2>
+                <div class="space-y-6">
+                    <div v-for="(data, member) in workloadData" :key="member"
+                        class="border-b border-gray-200 last:border-0 pb-4 last:pb-0">
+                        <h3 class="text-lg font-medium text-gray-800">{{ member }}</h3>
+                        <p class="text-sm text-gray-600 mb-2">总任务数: {{ data.total }}</p>
+                        <div class="space-y-2">
+                            <div v-for="item in data.assigned" :key="item.id"
+                                class="bg-gray-50 p-3 rounded-lg border-l-4" :class="{
+                                    'border-blue-500': item.type === 'User Story',
+                                    'border-green-500': item.type === 'Task',
+                                    'border-yellow-500': item.type === 'Bug'
+                                }">
+                                <p class="font-medium text-gray-800">{{ item.title }}</p>
+                                <div class="flex justify-between mt-1 text-sm text-gray-500">
+                                    <span class="px-2 py-1 bg-gray-100 rounded">{{ item.type }}</span>
+                                    <span class="px-2 py-1 bg-gray-100 rounded">{{ item.state }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/config.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+
+</html>
