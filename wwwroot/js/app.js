@@ -9,8 +9,33 @@ function formatDate(dateString) {
     });
 }
 
+// 计算延期状态
+function calculateDelayStatus(targetDateStr) {
+    if (!targetDateStr || targetDateStr === '-') return { status: 'normal', text: '正常' };
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    const targetDate = new Date(targetDateStr.split('/').reverse().join('/'));
+    targetDate.setHours(0, 0, 0, 0);
+    
+    if (targetDate < today) {
+        return { status: 'delayed', text: '已延期' };
+    } else if (targetDate <= tomorrow) {
+        return { status: 'warning', text: '即将到期' };
+    } else {
+        return { status: 'normal', text: '正常' };
+    }
+}
+
 // 处理工作项数据
 function processWorkItem(item) {
+    const targetDate = formatDate(item.fields['Microsoft.VSTS.Scheduling.TargetDate']);
+    const delayStatus = calculateDelayStatus(targetDate);
+    
     return {
         id: item.id,
         title: item.fields['System.Title'] || '无标题',
@@ -18,7 +43,8 @@ function processWorkItem(item) {
         state: item.fields['System.State'] || '未知',
         priority: item.fields['Microsoft.VSTS.Common.Priority'] || '-',
         startDate: formatDate(item.fields['Microsoft.VSTS.Scheduling.StartDate']),
-        targetDate: formatDate(item.fields['Microsoft.VSTS.Scheduling.TargetDate']),
+        targetDate: targetDate,
+        delayStatus: delayStatus,
         changedDate: formatDate(item.fields['System.ChangedDate']),
         changedBy: item.fields['System.ChangedBy']?.displayName || '-',
         assignedTo: item.fields['System.AssignedTo']?.displayName || '未分配'
@@ -47,7 +73,7 @@ const app = createApp({
         sortedMembers() {
             if (!this.workloadData) return [];
             return Object.entries(this.workloadData)
-                .sort(([, a], [, b]) => b.total - a.total)
+                .sort(([, a], [, b]) => a.total - b.total)
                 .map(([member]) => member);
         }
     },
