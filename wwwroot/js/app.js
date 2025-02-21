@@ -325,31 +325,56 @@ const app = createApp({
             for (const proj of this.projects) {
               if (proj.id === "all" || proj.collection !== collection.name) continue;
 
-              try {
-                const teams = await this.fetchApi(
-                  collection,
-                  `/_apis/projects/${proj.name}/teams`
-                );
-                if (teams && teams.value) {
-                  for (const team of teams.value) {
-                    const membersResponse = await this.fetchApi(
-                      collection,
-                      `/_apis/projects/${proj.name}/teams/${team.name}/members`
-                    );
-                    if (membersResponse && membersResponse.value) {
-                      membersResponse.value.forEach((member) => {
-                        const memberName =
-                          member.identity?.displayName ||
-                          member.identity?.uniqueName ||
-                          "未知成员";
-                        allMembers.add(memberName);
-                      });
+              if (this.team === "all") {
+                // 如果选择了全部团队，获取项目的所有团队成员
+                try {
+                  const teams = await this.fetchApi(
+                    collection,
+                    `/_apis/projects/${proj.name}/teams`
+                  );
+                  if (teams && teams.value) {
+                    for (const team of teams.value) {
+                      const membersResponse = await this.fetchApi(
+                        collection,
+                        `/_apis/projects/${proj.name}/teams/${team.name}/members`
+                      );
+                      if (membersResponse && membersResponse.value) {
+                        membersResponse.value.forEach((member) => {
+                          const memberName =
+                            member.identity?.displayName ||
+                            member.identity?.uniqueName ||
+                            "未知成员";
+                          allMembers.add(memberName);
+                        });
+                      }
                     }
                   }
+                } catch (err) {
+                  console.error(`Error loading members for project ${proj.name} in collection ${collection.name}:`, err);
+                  // 继续处理其他项目
                 }
-              } catch (err) {
-                console.error(`Error loading members for project ${proj.name} in collection ${collection.name}:`, err);
-                // 继续处理其他项目
+              } else {
+                // 获取特定团队的成员
+                const selectedTeam = this.teams.find((t) => t.id === this.team);
+                if (!selectedTeam || selectedTeam.collection !== collection.name || selectedTeam.projectName !== proj.name) continue;
+
+                try {
+                  const membersResponse = await this.fetchApi(
+                    collection,
+                    `/_apis/projects/${proj.name}/teams/${selectedTeam.name}/members`
+                  );
+                  if (membersResponse && membersResponse.value) {
+                    membersResponse.value.forEach((member) => {
+                      const memberName =
+                        member.identity?.displayName ||
+                        member.identity?.uniqueName ||
+                        "未知成员";
+                      allMembers.add(memberName);
+                    });
+                  }
+                } catch (err) {
+                  console.error(`Error loading members for team ${selectedTeam.name} in project ${proj.name}:`, err);
+                }
               }
             }
           } else {
@@ -416,12 +441,22 @@ const app = createApp({
         // 3. 获取工作项
         for (const collection of this.collections) {
           let projectCondition = "";
+          let areaPathCondition = "";
+          
           if (this.project !== "all") {
             const selectedProject = this.projects.find(
               (p) => p.id === this.project
             );
             if (!selectedProject || selectedProject.collection !== collection.name) continue;
             projectCondition = `AND [System.TeamProject] = '${selectedProject.name}'`;
+
+            if (this.team !== "all") {
+              const selectedTeam = this.teams.find((t) => t.id === this.team);
+              if (selectedTeam) {
+                // 使用团队的 AreaPath 进行过滤
+                areaPathCondition = `AND [System.AreaPath] UNDER '${selectedProject.name}\\${selectedTeam.name}'`;
+              }
+            }
           }
 
           // 添加目标日期条件
@@ -434,6 +469,7 @@ const app = createApp({
                              FROM WorkItems
                              WHERE [System.WorkItemType] = '用户情景'
                              ${projectCondition}
+                             ${areaPathCondition}
                              ${targetDateCondition}
                              AND [System.State] <> '已关闭'
                              AND [System.State] <> '已删除'
