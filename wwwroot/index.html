@@ -84,6 +84,25 @@
 
         <!-- 工作负载数据展示 -->
         <div v-if="workloadData" class="space-y-8">
+            <!-- 搜索框 -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <div class="flex items-center space-x-4">
+                    <div class="flex-1">
+                        <label for="memberSearch" class="block text-sm font-medium text-gray-700 mb-2">
+                            搜索成员
+                        </label>
+                        <input type="text" id="memberSearch" v-model="memberSearch" 
+                            placeholder="输入成员姓名进行搜索..."
+                            class="w-full rounded-md shadow-sm border-gray-300 focus:border-blue-500 focus:ring-blue-500">
+                    </div>
+                    <div class="flex items-center mt-6">
+                        <span class="text-sm text-gray-500">
+                            显示 {{ filteredMembers.length }} 个成员
+                        </span>
+                    </div>
+                </div>
+            </div>
+
             <!-- 图表展示 -->
             <div class="bg-white rounded-lg shadow-md p-6">
                 <h2 class="text-xl font-semibold text-gray-800 mb-4">工作项状态分布</h2>
@@ -95,7 +114,7 @@
                 <h2 class="text-xl font-semibold text-gray-800 mb-4">团队工作项详情</h2>
 
                 <!-- 团队成员循环 -->
-                <div v-for="member in sortedMembers" :key="member" class="mb-8 last:mb-0">
+                <div v-for="member in filteredMembers" :key="member" class="mb-8 last:mb-0">
                     <div class="flex items-center justify-between mb-4">
                         <h3 class="text-lg font-medium text-gray-800">{{ member }}</h3>
                         <span class="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">

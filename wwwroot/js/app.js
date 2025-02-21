@@ -94,6 +94,7 @@ const app = createApp({
       error: null,
       chart: null,
       hasTargetDate: true,
+      memberSearch: "",
     };
   },
   computed: {
@@ -104,6 +105,24 @@ const app = createApp({
         .sort(([, a], [, b]) => a.total - b.total)
         .map(([member]) => member);
     },
+    filteredMembers() {
+      if (!this.memberSearch) {
+        return this.sortedMembers;
+      }
+      const searchTerm = this.memberSearch.toLowerCase();
+      return this.sortedMembers.filter(member => 
+        member.toLowerCase().includes(searchTerm)
+      );
+    }
+  },
+  watch: {
+    filteredMembers: {
+      handler() {
+        this.$nextTick(() => {
+          this.updateChart();
+        });
+      }
+    }
   },
   methods: {
     getAuthHeaders(collection) {
@@ -546,8 +565,8 @@ const app = createApp({
         this.chart.destroy();
       }
 
-      // 准备数据并按工作项总数倒序排序
-      const members = this.sortedMembers;
+      // 使用过滤后的成员列表
+      const members = this.filteredMembers;
 
       const datasets = [];
 
