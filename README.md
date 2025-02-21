@@ -1,6 +1,6 @@
 # Azure DevOps 团队工作负载查看器
 
-一个基于 Web 的工具，用于可视化和管理 Azure DevOps 团队的工作负载分布。
+一个基于 Web 的工具，用于可视化和管理 Azure DevOps 团队的工作负载分布。支持多个 Collection 的数据聚合展示。
 
 ## 安全说明
 
@@ -22,8 +22,9 @@
 2. 编辑 `wwwroot/js/config.js` 配置文件：
 
    - `serverUrl`: Azure DevOps Server 地址
-   - `collection`: Collection 名称（例如：'DefaultCollection'）
-   - `pat`: Personal Access Token
+   - `collections`: Collection 配置数组
+     - `name`: Collection 名称
+     - `pat`: 对应 Collection 的 Personal Access Token
 
    > **注意**：不要将 `config.js` 提交到版本控制系统中
 
@@ -88,6 +89,11 @@ server {
   - 工作项延期状态自动计算和显示
   - 成员工作项按延期状态优先级排序
 
+- 多 Collection 支持
+  - 支持同时查看多个 Collection 的数据
+  - 每个 Collection 可以使用不同的 PAT
+  - 自动聚合所有 Collection 的数据
+
 ## 技术栈
 
 - Vue.js 3
@@ -110,6 +116,13 @@ server {
 - 即将到期：目标日期在 24 小时内
 - 已延期：已超过目标日期
 - 对于已解决的工作项，始终显示为正常状态
+
+## 数据聚合说明
+
+- 项目列表会显示所有 Collection 中的项目
+- 选择"全部项目"时会聚合显示所有 Collection 的数据
+- 工作负载统计会跨 Collection 汇总
+- 成员工作项会按照所属 Collection 标记显示
 
 ## 注意事项
 

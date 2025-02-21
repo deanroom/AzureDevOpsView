@@ -84,8 +84,7 @@ const app = createApp({
   data() {
     return {
       serverUrl: config.serverUrl,
-      collection: config.collection,
-      pat: config.pat,
+      collections: config.collections,
       project: "",
       team: "",
       projects: [],
@@ -107,17 +106,17 @@ const app = createApp({
     },
   },
   methods: {
-    getAuthHeaders() {
-      const auth = btoa(`:${this.pat}`);
+    getAuthHeaders(collection) {
+      const auth = btoa(`:${collection.pat}`);
       return {
         Authorization: `Basic ${auth}`,
         "Content-Type": "application/json",
         Accept: "application/json",
       };
     },
-    async fetchApi(url, options = {}) {
+    async fetchApi(collection, url, options = {}) {
       try {
-        const baseUrl = `${this.serverUrl}/${this.collection}`;
+        const baseUrl = `${this.serverUrl}/${collection.name}`;
         const apiVersion = "api-version=6.0";
         const fullUrl = `${baseUrl}${url}${
           url.includes("?") ? "&" : "?"
@@ -127,7 +126,7 @@ const app = createApp({
 
         const response = await fetch(fullUrl, {
           ...options,
-          headers: this.getAuthHeaders(),
+          headers: this.getAuthHeaders(collection),
         });
 
         if (!response.ok) {
@@ -151,20 +150,32 @@ const app = createApp({
         this.loading = true;
         this.error = null;
 
-        const data = await this.fetchApi("/_apis/projects");
-
-        if (!data || !data.value) {
-          throw new Error("返回的项目数据格式不正确");
+        const allProjects = [];
+        
+        // 从每个 collection 获取项目
+        for (const collection of this.collections) {
+          try {
+            const data = await this.fetchApi(collection, "/_apis/projects");
+            if (data && data.value) {
+              // 为每个项目添加 collection 信息
+              const projectsWithCollection = data.value.map(proj => ({
+                id: proj.id,
+                name: proj.name,
+                description: proj.description,
+                collection: collection.name
+              }));
+              allProjects.push(...projectsWithCollection);
+            }
+          } catch (err) {
+            console.error(`Error loading projects from collection ${collection.name}:`, err);
+            // 继续处理其他 collection
+          }
         }
 
         // 添加"全部项目"选项
         this.projects = [
           { id: "all", name: "全部项目", description: "显示所有项目" },
-          ...data.value.map((proj) => ({
-            id: proj.id,
-            name: proj.name,
-            description: proj.description,
-          })),
+          ...allProjects
         ];
 
         console.log("Loaded projects:", this.projects);
@@ -186,35 +197,35 @@ const app = createApp({
         this.loading = true;
         this.error = null;
 
-        if (this.project === "all") {
-          // 如果选择了"全部项目"，则获取所有项目的所有团队
-          const allTeams = [];
-          for (const proj of this.projects) {
-            if (proj.id === "all") continue;
+        const allTeams = [];
 
-            const data = await this.fetchApi(
-              `/_apis/projects/${proj.name}/teams`
-            );
-            if (data && data.value) {
-              allTeams.push(
-                ...data.value.map((team) => ({
-                  ...team,
-                  projectName: proj.name, // 添加项目名称以便后续使用
-                }))
-              );
+        if (this.project === "all") {
+          // 如果选择了"全部项目"，则获取所有 collection 中所有项目的所有团队
+          for (const collection of this.collections) {
+            for (const proj of this.projects) {
+              if (proj.id === "all") continue;
+              if (proj.collection !== collection.name) continue;
+
+              try {
+                const data = await this.fetchApi(
+                  collection,
+                  `/_apis/projects/${proj.name}/teams`
+                );
+                if (data && data.value) {
+                  allTeams.push(
+                    ...data.value.map((team) => ({
+                      ...team,
+                      projectName: proj.name,
+                      collection: collection.name
+                    }))
+                  );
+                }
+              } catch (err) {
+                console.error(`Error loading teams for project ${proj.name} in collection ${collection.name}:`, err);
+                // 继续处理其他项目
+              }
             }
           }
-
-          // 添加"全部团队"选项
-          this.teams = [
-            { id: "all", name: "全部团队", description: "显示所有团队" },
-            ...allTeams.map((team) => ({
-              id: team.id,
-              name: team.name,
-              description: team.description,
-              projectName: team.projectName,
-            })),
-          ];
         } else {
           // 获取特定项目的团队
           const selectedProject = this.projects.find(
@@ -224,25 +235,38 @@ const app = createApp({
             throw new Error("未找到选中的项目");
           }
 
+          const collection = this.collections.find(c => c.name === selectedProject.collection);
+          if (!collection) {
+            throw new Error("未找到项目对应的 collection");
+          }
+
           const data = await this.fetchApi(
+            collection,
             `/_apis/projects/${selectedProject.name}/teams`
           );
 
-          if (!data || !data.value) {
-            throw new Error("返回的团队数据格式不正确");
+          if (data && data.value) {
+            allTeams.push(
+              ...data.value.map((team) => ({
+                ...team,
+                projectName: selectedProject.name,
+                collection: collection.name
+              }))
+            );
           }
-
-          // 添加"全部团队"选项
-          this.teams = [
-            { id: "all", name: "全部团队", description: "显示所有团队" },
-            ...data.value.map((team) => ({
-              id: team.id,
-              name: team.name,
-              description: team.description,
-              projectName: selectedProject.name,
-            })),
-          ];
         }
+
+        // 添加"全部团队"选项
+        this.teams = [
+          { id: "all", name: "全部团队", description: "显示所有团队" },
+          ...allTeams.map((team) => ({
+            id: team.id,
+            name: team.name,
+            description: team.description,
+            projectName: team.projectName,
+            collection: team.collection
+          }))
+        ];
 
         // 默认选择"全部团队"
         this.team = "all";
@@ -259,7 +283,7 @@ const app = createApp({
         this.loading = false;
       }
     },
-    async fetchWorkItemsBatch(ids) {
+    async fetchWorkItemsBatch(collection, ids) {
       const batchSize = 200;
       const batches = [];
 
@@ -272,6 +296,7 @@ const app = createApp({
       for (const batch of batches) {
         const batchIds = batch.join(",");
         const response = await this.fetchApi(
+          collection,
           `/_apis/wit/workitems?ids=${batchIds}&fields=System.Id,System.Title,System.AssignedTo,System.State,System.WorkItemType,System.Description,System.CreatedDate,System.CreatedBy,System.ChangedDate,System.ChangedBy,Microsoft.VSTS.Common.Priority,System.AreaPath,System.IterationPath,Microsoft.VSTS.Scheduling.StartDate,Microsoft.VSTS.Scheduling.TargetDate,Microsoft.VSTS.Common.StateChangeDate`
         );
         if (response && response.value) {
@@ -294,137 +319,92 @@ const app = createApp({
         // 1. 获取团队成员
         let allMembers = new Set();
 
-        if (this.project === "all") {
-          // 如果选择了全部项目，获取所有项目的所有团队成员
-          for (const proj of this.projects) {
-            if (proj.id === "all") continue;
+        for (const collection of this.collections) {
+          if (this.project === "all") {
+            // 如果选择了全部项目，获取所有项目的所有团队成员
+            for (const proj of this.projects) {
+              if (proj.id === "all" || proj.collection !== collection.name) continue;
 
-            const teams = await this.fetchApi(
-              `/_apis/projects/${proj.name}/teams`
-            );
-            if (teams && teams.value) {
-              for (const team of teams.value) {
-                const membersResponse = await this.fetchApi(
-                  `/_apis/projects/${proj.name}/teams/${team.name}/members`
+              try {
+                const teams = await this.fetchApi(
+                  collection,
+                  `/_apis/projects/${proj.name}/teams`
                 );
-                if (membersResponse && membersResponse.value) {
-                  membersResponse.value.forEach((member) => {
-                    const memberName =
-                      member.identity?.displayName ||
-                      member.identity?.uniqueName ||
-                      "未知成员";
-                    allMembers.add(memberName);
-                  });
+                if (teams && teams.value) {
+                  for (const team of teams.value) {
+                    const membersResponse = await this.fetchApi(
+                      collection,
+                      `/_apis/projects/${proj.name}/teams/${team.name}/members`
+                    );
+                    if (membersResponse && membersResponse.value) {
+                      membersResponse.value.forEach((member) => {
+                        const memberName =
+                          member.identity?.displayName ||
+                          member.identity?.uniqueName ||
+                          "未知成员";
+                        allMembers.add(memberName);
+                      });
+                    }
+                  }
                 }
-              }
-            }
-          }
-        } else {
-          // 获取特定项目的团队成员
-          const selectedProject = this.projects.find(
-            (p) => p.id === this.project
-          );
-          if (!selectedProject) {
-            throw new Error("未找到选中的项目");
-          }
-
-          if (this.team === "all") {
-            // 如果选择了全部团队，获取项目的所有团队成员
-            const teams = await this.fetchApi(
-              `/_apis/projects/${selectedProject.name}/teams`
-            );
-            if (teams && teams.value) {
-              for (const team of teams.value) {
-                const membersResponse = await this.fetchApi(
-                  `/_apis/projects/${selectedProject.name}/teams/${team.name}/members`
-                );
-                if (membersResponse && membersResponse.value) {
-                  membersResponse.value.forEach((member) => {
-                    const memberName =
-                      member.identity?.displayName ||
-                      member.identity?.uniqueName ||
-                      "未知成员";
-                    allMembers.add(memberName);
-                  });
-                }
+              } catch (err) {
+                console.error(`Error loading members for project ${proj.name} in collection ${collection.name}:`, err);
+                // 继续处理其他项目
               }
             }
           } else {
-            // 获取特定团队的成员
-            const selectedTeam = this.teams.find((t) => t.id === this.team);
-            if (!selectedTeam) {
-              throw new Error("未找到选中的团队");
-            }
-
-            const membersResponse = await this.fetchApi(
-              `/_apis/projects/${selectedProject.name}/teams/${selectedTeam.name}/members`
+            // 获取特定项目的团队成员
+            const selectedProject = this.projects.find(
+              (p) => p.id === this.project
             );
-            if (membersResponse && membersResponse.value) {
-              membersResponse.value.forEach((member) => {
-                const memberName =
-                  member.identity?.displayName ||
-                  member.identity?.uniqueName ||
-                  "未知成员";
-                allMembers.add(memberName);
-              });
+            if (!selectedProject || selectedProject.collection !== collection.name) continue;
+
+            if (this.team === "all") {
+              // 如果选择了全部团队，获取项目的所有团队成员
+              const teams = await this.fetchApi(
+                collection,
+                `/_apis/projects/${selectedProject.name}/teams`
+              );
+              if (teams && teams.value) {
+                for (const team of teams.value) {
+                  const membersResponse = await this.fetchApi(
+                    collection,
+                    `/_apis/projects/${selectedProject.name}/teams/${team.name}/members`
+                  );
+                  if (membersResponse && membersResponse.value) {
+                    membersResponse.value.forEach((member) => {
+                      const memberName =
+                        member.identity?.displayName ||
+                        member.identity?.uniqueName ||
+                        "未知成员";
+                      allMembers.add(memberName);
+                    });
+                  }
+                }
+              }
+            } else {
+              // 获取特定团队的成员
+              const selectedTeam = this.teams.find((t) => t.id === this.team);
+              if (!selectedTeam) continue;
+
+              const membersResponse = await this.fetchApi(
+                collection,
+                `/_apis/projects/${selectedProject.name}/teams/${selectedTeam.name}/members`
+              );
+              if (membersResponse && membersResponse.value) {
+                membersResponse.value.forEach((member) => {
+                  const memberName =
+                    member.identity?.displayName ||
+                    member.identity?.uniqueName ||
+                    "未知成员";
+                  allMembers.add(memberName);
+                });
+              }
             }
           }
         }
 
-        // 2. 构建WIQL查询
-        let projectCondition = "";
-        if (this.project !== "all") {
-          const selectedProject = this.projects.find(
-            (p) => p.id === this.project
-          );
-          if (!selectedProject) {
-            throw new Error("未找到选中的项目");
-          }
-          projectCondition = `AND [System.TeamProject] = '${selectedProject.name}'`;
-        }
-
-        // 添加目标日期条件
-        const targetDateCondition = this.hasTargetDate
-          ? "AND [Microsoft.VSTS.Scheduling.TargetDate] <> ''"
-          : "";
-
-        const wiqlQuery = {
-          query: `SELECT [System.Id]
-                           FROM WorkItems
-                           WHERE [System.WorkItemType] = '用户情景'
-                           ${projectCondition}
-                           ${targetDateCondition}
-                           AND [System.State] <> '已关闭'
-                           AND [System.State] <> '已删除'
-                           ORDER BY [System.State] ASC, [Microsoft.VSTS.Common.Priority] ASC`,
-        };
-
-        // 3. 获取所有工作项ID
-        const allWorkItems = [];
-        let continuationToken = null;
-
-        do {
-          const workItemsResponse = await this.fetchApi(
-            `/_apis/wit/wiql?api-version=6.0`,
-            {
-              method: "POST",
-              body: JSON.stringify({
-                ...wiqlQuery,
-                ...(continuationToken && { continuationToken }),
-              }),
-            }
-          );
-
-          if (workItemsResponse.workItems) {
-            allWorkItems.push(...workItemsResponse.workItems);
-          }
-
-          continuationToken = workItemsResponse.continuationToken;
-        } while (continuationToken);
-
-        console.log(`Total work items found: ${allWorkItems.length}`);
-
-        // 4. 初始化数据结构
+        // 2. 初始化数据结构
         const workloadData = {};
         allMembers.forEach((memberName) => {
           workloadData[memberName] = {
@@ -433,39 +413,81 @@ const app = createApp({
           };
         });
 
-        // 5. 分批获取工作项详细信息
-        if (allWorkItems.length > 0) {
-          const workItemIds = allWorkItems.map((wi) => wi.id);
-          const detailedItems = await this.fetchWorkItemsBatch(workItemIds);
+        // 3. 获取工作项
+        for (const collection of this.collections) {
+          let projectCondition = "";
+          if (this.project !== "all") {
+            const selectedProject = this.projects.find(
+              (p) => p.id === this.project
+            );
+            if (!selectedProject || selectedProject.collection !== collection.name) continue;
+            projectCondition = `AND [System.TeamProject] = '${selectedProject.name}'`;
+          }
 
-          detailedItems.forEach((item) => {
-            const processedItem = processWorkItem(item);
-            // 添加项目和团队信息
-            processedItem.projectName = item.fields["System.TeamProject"];
-            processedItem.teamName =
-              item.fields["System.AreaPath"] || "默认团队";
-            const assignedTo = processedItem.assignedTo;
+          // 添加目标日期条件
+          const targetDateCondition = this.hasTargetDate
+            ? "AND [Microsoft.VSTS.Scheduling.TargetDate] <> ''"
+            : "";
 
-            if (!workloadData[assignedTo]) {
-              workloadData[assignedTo] = {
-                total: 0,
-                assigned: [],
-              };
+          const wiqlQuery = {
+            query: `SELECT [System.Id]
+                             FROM WorkItems
+                             WHERE [System.WorkItemType] = '用户情景'
+                             ${projectCondition}
+                             ${targetDateCondition}
+                             AND [System.State] <> '已关闭'
+                             AND [System.State] <> '已删除'
+                             ORDER BY [System.State] ASC, [Microsoft.VSTS.Common.Priority] ASC`,
+          };
+
+          try {
+            // 获取所有工作项ID
+            const workItemsResponse = await this.fetchApi(
+              collection,
+              `/_apis/wit/wiql?api-version=6.0`,
+              {
+                method: "POST",
+                body: JSON.stringify(wiqlQuery),
+              }
+            );
+
+            if (workItemsResponse.workItems && workItemsResponse.workItems.length > 0) {
+              const workItemIds = workItemsResponse.workItems.map((wi) => wi.id);
+              const detailedItems = await this.fetchWorkItemsBatch(collection, workItemIds);
+
+              detailedItems.forEach((item) => {
+                const processedItem = processWorkItem(item);
+                // 添加项目、团队和collection信息
+                processedItem.projectName = item.fields["System.TeamProject"];
+                processedItem.teamName = item.fields["System.AreaPath"] || "默认团队";
+                processedItem.collection = collection.name;
+                const assignedTo = processedItem.assignedTo;
+
+                if (!workloadData[assignedTo]) {
+                  workloadData[assignedTo] = {
+                    total: 0,
+                    assigned: [],
+                  };
+                }
+
+                workloadData[assignedTo].assigned.push(processedItem);
+                workloadData[assignedTo].total++;
+              });
             }
-
-            workloadData[assignedTo].assigned.push(processedItem);
-            workloadData[assignedTo].total++;
-          });
-
-          // 对每个成员的工作项按延期状态排序
-          Object.values(workloadData).forEach((memberData) => {
-            memberData.assigned.sort((a, b) => {
-              const priorityA = getDelayStatusPriority(a.delayStatus.status);
-              const priorityB = getDelayStatusPriority(b.delayStatus.status);
-              return priorityA - priorityB;
-            });
-          });
+          } catch (err) {
+            console.error(`Error loading work items from collection ${collection.name}:`, err);
+            // 继续处理其他 collection
+          }
         }
+
+        // 对每个成员的工作项按延期状态排序
+        Object.values(workloadData).forEach((memberData) => {
+          memberData.assigned.sort((a, b) => {
+            const priorityA = getDelayStatusPriority(a.delayStatus.status);
+            const priorityB = getDelayStatusPriority(b.delayStatus.status);
+            return priorityA - priorityB;
+          });
+        });
 
         console.log("Processed workload data:", workloadData);
         this.workloadData = workloadData;
@@ -552,15 +574,15 @@ const app = createApp({
   },
   mounted() {
     // 初始化时立即加载项目列表
-    if (this.serverUrl && this.pat) {
+    if (this.serverUrl && this.collections.length > 0) {
       this.loadProjects();
     }
 
     // 监听配置变化
     this.$watch(
-      () => [this.serverUrl, this.pat],
+      () => [this.serverUrl, this.collections],
       () => {
-        if (this.serverUrl && this.pat) {
+        if (this.serverUrl && this.collections.length > 0) {
           this.loadProjects();
         }
       }
